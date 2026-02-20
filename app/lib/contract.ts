@@ -4,10 +4,17 @@ import {
   Operation,
   TransactionBuilder,
   Memo,
+  Contract,
+  xdr,
+  scValToNative,
+  rpc
 } from "@stellar/stellar-sdk";
 import { signTransaction } from "@stellar/freighter-api";
-import { server, NETWORK_PASSPHRASE } from "./stellar";
+import { server, rpcServer, NETWORK_PASSPHRASE } from "./stellar";
 import type { StellarWalletsKit } from '@creit.tech/stellar-wallets-kit';
+
+// TODO: Replace with your actual deployed Contract ID
+export const CONTRACT_ID = "CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 
 export async function createPayment(from: string, to: string, amount: number, memo: string, kit?: StellarWalletsKit) {
   try {
@@ -171,5 +178,87 @@ export async function getTransactionDetails(hash: string) {
       success: false,
       error: e.message
     };
+  }
+}
+
+/**
+ * Soroban Contract Call: Records a payment in the smart contract
+ */
+export async function recordOnChain(from: string, to: string, amount: number, memo: string, kit: StellarWalletsKit) {
+  try {
+    const contract = new Contract(CONTRACT_ID);
+    const source = await server.loadAccount(from);
+
+    // Build the Soroban invocation
+    const transaction = new TransactionBuilder(source, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        contract.call("record_payment",
+          xdr.ScVal.scvAddress(xdr.ScAddress.scAddressTypeAccount(xdr.PublicKey.publicKeyTypeEd25519(Buffer.from(from)))), // sender
+          xdr.ScVal.scvAddress(xdr.ScAddress.scAddressTypeAccount(xdr.PublicKey.publicKeyTypeEd25519(Buffer.from(to)))),   // receiver
+          xdr.ScVal.scvI128(new xdr.Int128Parts({
+            lo: xdr.Uint64.fromString((BigUint64Array.from([BigInt(amount * 10_000_000)])[0]).toString()),
+            hi: xdr.Int64.fromString("0")
+          })), // amount (stroops)
+          xdr.ScVal.scvString(memo) // memo
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const { signedTxXdr } = await kit.signTransaction(transaction.toXDR());
+    const txToSubmit = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+
+    // Simulate first to get footprint
+    const simulation = await rpcServer.simulateTransaction(txToSubmit);
+    if (rpc.Api.isSimulationError(simulation)) {
+      throw new Error("Simulation failed");
+    }
+
+    // Rebuild with resource data
+    const transactionWithResources = rpc.assembleTransaction(txToSubmit, simulation).build();
+    const { signedTxXdr: signedFinalXdr } = await kit.signTransaction(transactionWithResources.toXDR());
+    const finalTxSubmit = TransactionBuilder.fromXDR(signedFinalXdr, NETWORK_PASSPHRASE);
+
+    const result = await rpcServer.sendTransaction(finalTxSubmit);
+
+    return {
+      success: true,
+      hash: result.hash,
+    };
+  } catch (e: any) {
+    console.error("Contract Error:", e);
+    return {
+      success: false,
+      error: e.message || "Failed to call contract"
+    };
+  }
+}
+
+/**
+ * Real-time Event Integration: Poll for payment events from the contract
+ */
+export async function getEvents() {
+  try {
+    const ledger = await rpcServer.getLatestLedger();
+    const response = await rpcServer.getEvents({
+      startLedger: ledger.sequence - 100,
+      filters: [
+        {
+          type: "contract",
+          contractIds: [CONTRACT_ID],
+        },
+      ],
+    });
+
+    return response.events.map(event => ({
+      ...event,
+      decodedData: scValToNative(xdr.ScVal.fromXDR(event.value.toXDR()))
+    }));
+  } catch (e) {
+    console.error("Failed to fetch events:", e);
+    return [];
   }
 }

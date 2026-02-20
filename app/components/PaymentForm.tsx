@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createPayment, checkBalance } from '../lib/contract'
+import { createPayment, checkBalance, recordOnChain } from '../lib/contract'
 import type { StellarWalletsKit } from '@creit.tech/stellar-wallets-kit';
 import QRScannerModal from './QRScannerModal';
 
@@ -41,6 +41,17 @@ export default function PaymentForm({ address, setStatus, setError, onCheckBalan
       const res = await createPayment(address, to, Number(amount), memo, kit)
 
       if (res.success) {
+        // Also record on the smart contract for Level 2 verification
+        if (kit) {
+          try {
+            await recordOnChain(address, to, Number(amount), memo, kit);
+          } catch (contractError) {
+            console.error("Failed to record in contract:", contractError);
+            // We don't fail the whole user flow if just the logging fails, 
+            // but in a real app you might want to handle this.
+          }
+        }
+
         setStatus('success')
         setTo('')
         setAmount('')

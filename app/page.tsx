@@ -10,6 +10,7 @@ import BalanceModal from './components/BalanceModal'
 import QRCodeModal from './components/QRCodeModal'
 import InvoiceGenerator from './components/InvoiceGenerator'
 import AnalyticsDashboard from './components/AnalyticsDashboard'
+import ContractEvents from './components/ContractEvents'
 import type { StellarWalletsKit } from '@creit.tech/stellar-wallets-kit'
 
 export default function Page() {
@@ -191,6 +192,10 @@ function DashboardContent({ address, setAddress, kit, darkMode, toggleDarkMode, 
           />
           <div className="mt-6"><PaymentStatus status={status} darkMode={darkMode} /></div>
           {error && <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs font-bold animate-pulse flex items-center gap-2"><span>⚠️</span> {error}</div>}
+
+          {/* Smart Contract Events */}
+          <ContractEvents darkMode={darkMode} />
+
           <button onClick={() => setAddress(null)} className="mt-auto py-4 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-red-400 transition-colors border-t border-white/5 pt-6">Disconnect Wallet</button>
         </div>
 
