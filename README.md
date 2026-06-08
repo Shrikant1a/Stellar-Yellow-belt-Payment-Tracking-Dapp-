@@ -126,7 +126,8 @@ MIT License – Free to use and modify
 👨‍💻 Author
 
 Your Name
-GitHub: https://github.com/your-username
+GitHub: https://github.com/Shrikant1a
+
 
 
 
